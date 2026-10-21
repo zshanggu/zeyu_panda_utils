@@ -153,6 +153,10 @@ def main() -> None:
                 device=device,
                 controller_type=controller_type,
             )
+            # The right button is deoxys' "reset" signal, which yields no action; treat it as quit.
+            if action is None:
+                cprint("Right button pressed, stopping teleop", "yellow")
+                break
             robot_interface.control(
                 controller_type=controller_type,
                 action=action,
