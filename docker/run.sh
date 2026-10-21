@@ -29,6 +29,6 @@ exec docker run --rm "${TTY_FLAGS[@]}" "${DEVICE_FLAGS[@]}" -v /run/udev:/run/ud
     --network host --ipc host \
     --user "$(id -u):$(id -g)" --group-add plugdev \
     -e HOME=/tmp -e DISPLAY="${DISPLAY:-}" -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -e FASTRTPS_DEFAULT_PROFILES_FILE="$WORKSPACE/panda_utils/docker/fastdds_udp_only.xml" \
+    -e FASTRTPS_DEFAULT_PROFILES_FILE="$WORKSPACE/zeyu_panda_utils/docker/fastdds_udp_only.xml" \
     -v "$WORKSPACE:$WORKSPACE" \
     panda-deoxys "${@:-bash}"

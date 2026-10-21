@@ -1,5 +1,5 @@
 # Workstation-side environment for deoxys control, teleop and data collection (ROS 2 Humble).
-# deoxys_control and panda_utils are NOT baked in: run.sh mounts them from the host so edits
+# deoxys_control and zeyu_panda_utils are NOT baked in: run.sh mounts them from the host so edits
 # take effect without a rebuild. The NUC keeps running bin/franka-interface + gripper-interface.
 #
 # Build:  docker build -t panda-deoxys -f docker/Dockerfile docker
@@ -17,7 +17,7 @@ RUN pip3 install --no-cache-dir \
         "numpy<2" "protobuf==3.20.0" pyzmq PyYAML easydict termcolor tqdm numba glfw hidapi pybullet \
         h5py opencv-python
 
-ENV PYTHONPATH=/data/zeyu/Deformable/deoxys_control/deoxys:/data/zeyu/Deformable/panda_utils/src
+ENV PYTHONPATH=/data/zeyu/Deformable/deoxys_control/deoxys:/data/zeyu/Deformable/zeyu_panda_utils/src
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
-WORKDIR /data/zeyu/Deformable/panda_utils
+WORKDIR /data/zeyu/Deformable/zeyu_panda_utils
 CMD ["bash"]

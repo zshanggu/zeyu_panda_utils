@@ -32,7 +32,7 @@ docker: panda-deoxys  --ZMQ 5555-5558-->  auto_arm.sh / auto_gripper.sh  --FCI/l
    ./auto_scripts/auto_gripper.sh config/charmander.yml   # terminal 2
    ```
    `auto_arm.sh` restarts `franka-interface` by itself when a client ends (teleop does this on exit).
-3. **This PC.** Run everything through the container, from `/data/zeyu/Deformable/panda_utils`:
+3. **This PC.** Run everything through the container, from `/data/zeyu/Deformable/zeyu_panda_utils`:
    ```bash
    docker/run.sh python3 scripts/franka_manipulation.py --check   # no motion, ports only
    docker/run.sh python3 scripts/franka_manipulation.py --demo home
@@ -40,7 +40,7 @@ docker: panda-deoxys  --ZMQ 5555-5558-->  auto_arm.sh / auto_gripper.sh  --FCI/l
    If a terminal says `permission denied ... docker.sock`, run `newgrp docker` (or log out and
    back in once).
 
-## Commands (all from `panda_utils/`, stop button in hand)
+## Commands (all from `zeyu_panda_utils/`, stop button in hand)
 
 | What | Command |
 |---|---|
@@ -87,7 +87,7 @@ Record one short demo first and check the HDF5 before collecting real data.
   `Joint position callback` → `Initialize OSC Pose` → `Initialize Pose interpolator!`): `franka-interface`
   hung while switching from a joint move to OSC within one process. This is intermittent and was seen twice. **Restart
   `auto_arm.sh`.** `zeyu-Policy-deploy-Franka` avoids it by restarting the NUC process after every joint move
-  (`backend/robot.py: restart_nuc_controller`). The panda_utils scripts (`franka_manipulation.py`,
+  (`backend/robot.py: restart_nuc_controller`). The zeyu_panda_utils scripts (`franka_manipulation.py`,
   `osc_probe.py`, `log_demonstration2.py`) still home and then switch, so they can hit it. After a restart,
   OSC moved about 55 mm/s with a 2 cm-per-step command.
 - OSC isn't exact: about 26 mm of sideways drift over a 52 mm move, and `move_to_ee_position` stops within 1 cm.
@@ -98,12 +98,12 @@ Record one short demo first and check the HDF5 before collecting real data.
 
 ## What was changed
 
-- `panda_utils/docker/Dockerfile`, `docker/run.sh`, `docker/fastdds_udp_only.xml`: the `panda-deoxys`
+- `zeyu_panda_utils/docker/Dockerfile`, `docker/run.sh`, `docker/fastdds_udp_only.xml`: the `panda-deoxys`
   image (ROS 2 Humble + deoxys deps, protobuf 3.20). `run.sh` mounts `/data/zeyu/Deformable` and passes
   in the SpaceMouse, which is found again on every start. Rebuild with
   `docker build -t panda-deoxys -f docker/Dockerfile docker`.
-- `panda_utils/scripts/osc_probe.py`: new OSC response test.
-- `panda_utils/scripts/panda_teleop.py`: the right button now quits instead of crashing.
+- `zeyu_panda_utils/scripts/osc_probe.py`: new OSC response test.
+- `zeyu_panda_utils/scripts/panda_teleop.py`: the right button now quits instead of crashing.
 - `deoxys_control/deoxys/deoxys/utils/io_devices/spacemouse.py`: supports the older SpaceNavigator
   (`046d:c626`), which sends translation and rotation as separate reports. This is the local copy only;
   the NUC is unchanged.
