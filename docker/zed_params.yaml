@@ -1,0 +1,21 @@
+# Overrides for zed_wrapper (humble-v4.2.5) used by docker/zed_cameras.sh, applied to every camera on top of the
+# wrapper's common_stereo.yaml + <model>.yaml. Chosen to reproduce what the lab's zed_tools/launch_all.sh published:
+# 672x376 images (native VGA, not downscaled) at 30 Hz under /zed_multi/<camera>/...
+/**:
+  ros__parameters:
+    general:
+      camera_timeout_sec: 5
+      camera_max_reconnect: 24    # keep trying to open for ~2 min (default 5 tries): a camera released by a
+                                  # just-stopped run can take a while to become available again
+      grab_resolution: 'VGA'      # 672x376 on every ZED model
+      grab_frame_rate: 30
+      pub_resolution: 'NATIVE'    # the wrapper's default 'CUSTOM' would halve it to 336x188
+      pub_frame_rate: 30.0
+    depth:
+      depth_mode: 'PERFORMANCE'   # no AI model download/optimization; zed_cameras.sh ZED_DEPTH_MODE overrides
+    pos_tracking:
+      pos_tracking_enabled: false # not used by the apps; three cameras would also publish clashing odom TFs
+      publish_tf: false
+      publish_map_tf: false
+    sensors:
+      publish_imu_tf: false

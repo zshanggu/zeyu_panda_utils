@@ -73,12 +73,20 @@ Record one short demo first and check the HDF5 before collecting real data.
 | `zed2i` | ZED 2i | 33386243 | third-person, top/side, sees the whole table and robot base |
 | `zed` | ZED (original) | n/a | third-person, front, facing the robot |
 
-- Images come from **`res1`'s `launch_all.sh`** (another Linux user on this PC), on topics
-  `/zed_multi/<cam>/rgb/image_rect_color` and `/zed_multi/<cam>/depth/depth_registered`, at 30 Hz and
-  672x376. If `res1` stops it or reboots, the cameras disappear. A camera container of our own
-  (ZED SDK + zed-ros2-wrapper, GPU) is still to do.
-- Cross-user ROS 2 needs UDP. `docker/fastdds_udp_only.xml` handles this and `run.sh` sets it automatically.
-  Without it you see topics but receive no images.
+- **Start the cameras yourself with `docker/zed_cameras.sh`** (Ctrl+C stops them). It runs the `zed-ros2` image
+  (`docker/zed.Dockerfile`: ZED SDK 4.2.5 + zed-ros2-wrapper humble-v4.2.5) and publishes the topics the apps use,
+  `/zed_multi/<cam>/rgb/image_rect_color` (left lens), `left/` and `right/image_rect_color`, and
+  `depth/depth_registered`, at 672x376 and 30 Hz. Settings are in `docker/zed_params.yaml`: native VGA, depth
+  `PERFORMANCE` (`ZED_DEPTH_MODE=NEURAL` for better depth; its first start builds the AI model), positional
+  tracking and camera TFs off.
+  - `docker/zed_cameras.sh --list` lists the connected cameras and their serial numbers. The original ZED's
+    serial goes into `ZED_CAMERAS` (the default spec has a placeholder for it).
+  - The SDK downloads each camera's factory calibration once, into `/data/zeyu/Deformable/.cache/zed/settings`.
+  - **Only one program can open a camera.** Before 2026-10-23 the images came from `res1`'s `launch_all.sh`
+    (another Linux user). It stopped when the cameras were re-plugged. `zed_cameras.sh` refuses to start while
+    `/zed_multi` topics are already published, so agree with that user on who runs the cameras.
+- ROS 2 between containers and users needs UDP. `docker/fastdds_udp_only.xml` handles this, and `zed_cameras.sh`,
+  `run.sh` and the deploy app all set it. Without it you see topics but receive no images.
 - `logs/camera_id/*.jpg` holds one sample frame from each camera.
 
 ## Known issues and fixes
@@ -125,4 +133,4 @@ the arm.
 3. Convert the demos to LeRobot (see `zeyu_openpi/examples/franka_towel/`) and fine-tune Pi0.5.
 4. Write the Pi0.5 robot client: openpi websocket client + `FrankaInterface` OSC_POSE deltas at 20 Hz
    + ZED images. `scripts/act_inference.py` / `rm_bc_inference.py` are templates.
-5. Optional: our own ZED camera container so we don't depend on `res1`.
+5. Done 2026-10-23: our own ZED camera container (`docker/zed_cameras.sh`), so we don't depend on `res1`.
