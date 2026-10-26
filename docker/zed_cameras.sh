@@ -36,9 +36,13 @@ if ! docker_cmd image inspect zed-ros2 >/dev/null 2>&1; then
     docker_cmd build -t zed-ros2 -f "$HERE/zed.Dockerfile" "$HERE"
 fi
 
-# Refuse to fight another launcher for the cameras.
+# A previous run that is still shutting down keeps the cameras busy: wait until it is gone (before the check below,
+# which would otherwise see that run's own topics).
+for _ in $(seq 1 30); do docker_cmd ps -q -f name="^$NAME$" | grep -q . || break; sleep 1; done
+# Refuse to fight another launcher for the cameras. --no-daemon: a ROS 2 daemon left running on this PC (e.g. by
+# another user) caches topics that are no longer published, which gave a false "already published" error.
 existing="$(docker_cmd run --rm --network host --ipc host -e FASTRTPS_DEFAULT_PROFILES_FILE="$HERE/fastdds_udp_only.xml" \
-    -v "$HERE:$HERE:ro" zed-ros2 bash -c 'source /opt/ros/humble/setup.bash; timeout 5 ros2 topic list 2>/dev/null' \
+    -v "$HERE:$HERE:ro" zed-ros2 bash -c 'source /opt/ros/humble/setup.bash; timeout 8 ros2 topic list --no-daemon 2>/dev/null' \
     | grep -c '^/zed_multi/' || true)"
 if (( existing > 0 )); then
     echo "error: /zed_multi topics are already published (another ZED launcher, e.g. res1's launch_all.sh, is running)." >&2
@@ -71,8 +75,6 @@ serial_number:=$serial publish_tf:=false publish_map_tf:=false publish_imu_tf:=f
 ros_params_override_path:=$PARAMS & sleep 8; "
 done
 
-# A previous run that is still shutting down keeps the cameras busy: wait until it is gone.
-for _ in $(seq 1 30); do docker_cmd ps -q -f name="^$NAME$" | grep -q . || break; sleep 1; done
 echo "Starting ZED cameras: $ZED_CAMERAS (depth $ZED_DEPTH_MODE). Topics: /zed_multi/<name>/rgb/image_rect_color, ..."
 # Shut down gracefully: SIGKILLing the ZED driver mid-stream once left the ZED 2i undetectable until it was
 # replugged. --init forwards docker stop's SIGTERM to the inner shell, which passes SIGTERM on to ros2 launch / the
