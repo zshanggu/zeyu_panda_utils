@@ -39,13 +39,18 @@ fi
 # A previous run that is still shutting down keeps the cameras busy: wait until it is gone (before the check below,
 # which would otherwise see that run's own topics).
 for _ in $(seq 1 30); do docker_cmd ps -q -f name="^$NAME$" | grep -q . || break; sleep 1; done
-# Refuse to fight another launcher for the cameras. --no-daemon: a ROS 2 daemon left running on this PC (e.g. by
-# another user) caches topics that are no longer published, which gave a false "already published" error.
+# Refuse to fight another launcher for the cameras: count PUBLISHERS of the camera image topics. A plain topic list
+# is not enough: it also shows topics that only have subscribers (e.g. the deploy app waiting for frames), and a
+# ROS 2 daemon left running on this PC caches topics that are gone, hence --no-daemon.
+check_topics=""
+for spec in $ZED_CAMERAS; do check_topics+=" /zed_multi/${spec%%:*}/rgb/image_rect_color"; done
 existing="$(docker_cmd run --rm --network host --ipc host -e FASTRTPS_DEFAULT_PROFILES_FILE="$HERE/fastdds_udp_only.xml" \
-    -v "$HERE:$HERE:ro" zed-ros2 bash -c 'source /opt/ros/humble/setup.bash; timeout 8 ros2 topic list --no-daemon 2>/dev/null' \
-    | grep -c '^/zed_multi/' || true)"
-if (( existing > 0 )); then
-    echo "error: /zed_multi topics are already published (another ZED launcher, e.g. res1's launch_all.sh, is running)." >&2
+    -v "$HERE:$HERE:ro" zed-ros2 bash -c "source /opt/ros/humble/setup.bash; for t in $check_topics; do \
+timeout 8 ros2 topic info --no-daemon \$t 2>/dev/null | grep -q 'Publisher count: [1-9]' && echo \$t; done" \
+    | grep '^/zed_multi/' || true)"  # the image's NVIDIA banner also goes to stdout
+if [[ -n "$existing" ]]; then
+    echo "error: these camera topics are already published (another ZED launcher, e.g. res1's launch_all.sh, is running):" >&2
+    echo "$existing" | sed 's/^/         /' >&2
     echo "       Only one program can open the cameras; stop that one first." >&2
     exit 1
 fi
