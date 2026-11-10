@@ -46,8 +46,10 @@ Kept episodes are appended to --output (created if missing; an existing file get
 ENTER starts and stops an episode; Ctrl-C stops and keeps it, then exits.
 
 --format picks the file type of a session (default softmimicgen, the layout above). `--format robosim` runs
-record_robosim_demo.py instead, unchanged: per-episode episode_NNN.h5 + front/wrist mp4s + first-frame pngs under
-<workspace>/data/robosim/<task>__<time>/, with that script's own options (e.g. --no-wrist-depth, --output-dir):
+record_robosim_demo.py's recorder instead (robosim_format.py): per-episode episode_NNN.h5 + front/wrist mp4s +
+first-frame pngs under <workspace>/data/robosim/<task>__<time>/, with that script's own options (e.g. --no-wrist-depth,
+--output-dir). Both cameras are center-cropped and resized to 512x512 as here (the wrist depth and camera_info too);
+--full-frame keeps them as they come:
     docker/run_local.sh python3 scripts/record_softmimicgen_demo.py --format robosim --task franka_rope
     docker/run_local.sh python3 scripts/record_softmimicgen_demo.py --format robosim --help
 --hold-orientation (hold_orientation_teleop.py) keeps the gripper vertical, twist to turn it; with either format.
@@ -66,7 +68,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-import cv2
 import h5py
 import numpy as np
 import rclpy
@@ -87,9 +88,9 @@ from record_robosim_demo import (
     mat2quat_xyzw,
     wait_for_sensors,
 )
-from hold_orientation_teleop import HOLD_HELP, HoldOrientationTeleop, rotvec, run_robosim_recorder
+from hold_orientation_teleop import HOLD_HELP, HoldOrientationTeleop, rotvec
+from robosim_format import IMAGE_SIZE, center_square, run_robosim_recorder
 
-IMAGE_SIZE = 512
 IK_REL_SCALE = 0.5  # the sim's DifferentialInverseKinematicsAction scale: processed_actions = 0.5 * actions
 FINGER_OPEN_M = 0.04
 # obs/robot0_joint_pos_rel is relative to the sim robot's default joints (read off the sim file: states - joint_pos_rel).
@@ -97,17 +98,6 @@ SIM_DEFAULT_JOINT_POS = np.array([0.0444, -0.1894, -0.1107, -2.5148, 0.0044, 2.3
 CAMERAS = {"agentview": "front", "eye_in_hand": "wrist"}  # dataset name -> camera
 IMAGE_KEYS = {"agentview": "obs/agentview_image", "eye_in_hand": "obs/robot0_eye_in_hand_image"}
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[2] / "hdf5_data" / "real"  # <workspace>/hdf5_data/real
-
-
-def center_square(rgb: np.ndarray, size: int = IMAGE_SIZE) -> np.ndarray:
-    """Center-crop to a square on the shorter side, then resize to size x size."""
-    h, w = rgb.shape[:2]
-    s = min(h, w)
-    y, x = (h - s) // 2, (w - s) // 2
-    crop = rgb[y:y + s, x:x + s]
-    if s == size:
-        return np.ascontiguousarray(crop)
-    return cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA if s > size else cv2.INTER_LINEAR)
 
 
 def quat_wxyz_x_positive(r: np.ndarray) -> np.ndarray:

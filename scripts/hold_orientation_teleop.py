@@ -16,23 +16,16 @@ input2action's -yaw), which for a vertical gripper is a spin about its own axis;
 heading follows it (re-anchored to the current heading while twisting and when the twist ends, so the gripper stops
 where it is rather than running on to a target that led it). The puck's tilts (action[3:5]) are never sent.
 
-This module only builds on record_robosim_demo, which it leaves unchanged:
-  * record_softmimicgen_demo.py uses HoldOrientationTeleop directly;
-  * run_robosim_recorder() runs record_robosim_demo.main() with its Teleop swapped for this one (that is what
-    `record_softmimicgen_demo.py --format robosim --hold-orientation` does).
+This module only builds on record_robosim_demo, which it leaves unchanged. record_softmimicgen_demo.py uses
+HoldOrientationTeleop directly; robosim_format.py swaps it into record_robosim_demo for `--format robosim`.
 """
 
 from __future__ import annotations
 
-import sys
-
 import numpy as np
-from termcolor import cprint
 
-import record_robosim_demo
 from record_robosim_demo import Teleop, mat2quat_xyzw
 
-HOLD_FLAG = "--hold-orientation"
 HOLD_HELP = ("keep the gripper vertical (its orientation after homing) while the arm moves, without drift: tilting the "
              "SpaceMouse is ignored, twisting it spins the gripper about its vertical axis, and it stays at the angle "
              "it was turned to")
@@ -117,44 +110,3 @@ class HoldOrientationTeleop(Teleop):
             delta *= self.MAX_HOLD_CORRECTION_RAD / norm
         delta[2] += twist
         return delta
-
-
-def run_robosim_recorder(argv: list[str]) -> int:
-    """record_robosim_demo.main() on argv, with --hold-orientation added from outside: its Teleop is swapped for
-    HoldOrientationTeleop, the hold is re-taken after each homing, and the HDF5 gets a teleop_hold_orientation attr.
-    Without the flag it is record_robosim_demo.main() as is."""
-    if HOLD_FLAG not in argv:
-        sys.argv = [record_robosim_demo.__file__] + argv
-        return record_robosim_demo.main()
-    argv = [a for a in argv if a != HOLD_FLAG]
-    if not any(a == "--lock-rotation" or a.startswith("--lock-rotation=") for a in argv):
-        argv.append("--lock-rotation")  # the flag alone: nothing locked; the hold decides what turns the gripper
-
-    teleops: list[HoldOrientationTeleop] = []
-
-    def make_teleop(robot, device, t0, lock_rotation=("pitch",)):
-        teleops.append(HoldOrientationTeleop(robot, device, t0, lock_rotation, hold_orientation=True))
-        return teleops[-1]
-
-    reset_joints_to = record_robosim_demo.reset_joints_to
-
-    def reset_then_hold(*args, **kwargs):
-        result = reset_joints_to(*args, **kwargs)
-        for teleop in teleops:
-            teleop.hold_current()
-        return result
-
-    class Writer(record_robosim_demo.EpisodeWriter):
-        def __init__(self, stem, rate_hz, file_attrs, camera_attrs):
-            super().__init__(stem, rate_hz, {**file_attrs, "teleop_hold_orientation": True}, camera_attrs)
-
-    saved = (record_robosim_demo.Teleop, record_robosim_demo.reset_joints_to, record_robosim_demo.EpisodeWriter)
-    record_robosim_demo.Teleop, record_robosim_demo.reset_joints_to, record_robosim_demo.EpisodeWriter = (
-        make_teleop, reset_then_hold, Writer)
-    make_teleop.LOCKABLE_ROTATIONS = Teleop.LOCKABLE_ROTATIONS  # main() reads it for --lock-rotation's choices
-    try:
-        sys.argv = [record_robosim_demo.__file__] + argv
-        cprint("--hold-orientation: the gripper is kept vertical; twist the SpaceMouse to turn it", "cyan")
-        return record_robosim_demo.main()
-    finally:
-        record_robosim_demo.Teleop, record_robosim_demo.reset_joints_to, record_robosim_demo.EpisodeWriter = saved
