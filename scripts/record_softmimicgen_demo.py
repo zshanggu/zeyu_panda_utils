@@ -249,19 +249,39 @@ class DemoWriter:
         self.path.unlink(missing_ok=True)
 
 
+def _next_index(data: h5py.Group) -> int:
+    indices = [int(k.split("_")[1]) for k in data.keys() if k.startswith("demo_") and k.split("_")[1].isdigit()]
+    return max(indices) + 1 if indices else 0
+
+
+def _check_rate(output: Path, data: h5py.Group, env_args: dict) -> None:
+    if "env_args" in data.attrs:
+        existing = json.loads(data.attrs["env_args"])
+        if existing.get("sim_args", {}).get("dt") != env_args["sim_args"]["dt"]:
+            raise ValueError(f"{output} was recorded at dt={existing.get('sim_args', {}).get('dt')}, "
+                             f"not {env_args['sim_args']['dt']}; use another --output")
+
+
+def existing_demos(output: Path, env_args: dict) -> tuple[int, int]:
+    """(demos already in output, index the next one gets) -- (0, 0) for a new file. Raises ValueError if output was
+    recorded at another rate, so that is found before an episode is recorded rather than when it is saved."""
+    if not output.exists():
+        return 0, 0
+    with h5py.File(output, "r") as f:
+        if "data" not in f:
+            return 0, 0
+        _check_rate(output, f["data"], env_args)
+        return sum(1 for k in f["data"] if k.startswith("demo_")), _next_index(f["data"])
+
+
 def append_demo(staged: Path, output: Path, env_args: dict) -> str:
     """Copy the staged demo into output as the next demo_N (chunks are copied as they are, not recompressed)."""
     with h5py.File(output, "a") as dst, h5py.File(staged, "r") as src:
         data = dst.require_group("data")
-        if "env_args" in data.attrs:
-            existing = json.loads(data.attrs["env_args"])
-            if existing.get("sim_args", {}).get("dt") != env_args["sim_args"]["dt"]:
-                raise ValueError(f"{output} was recorded at dt={existing.get('sim_args', {}).get('dt')}, "
-                                 f"not {env_args['sim_args']['dt']}; use another --output")
-        else:
+        _check_rate(output, data, env_args)
+        if "env_args" not in data.attrs:
             data.attrs["env_args"] = json.dumps(env_args)
-        indices = [int(k.split("_")[1]) for k in data.keys() if k.startswith("demo_")]
-        name = f"demo_{max(indices) + 1 if indices else 0}"
+        name = f"demo_{_next_index(data)}"
         src.copy(src["data/demo_0"], data, name=name)
         data[name].attrs["source_demo"] = np.int64(int(name.split("_")[1]))
         data.attrs["total"] = np.int64(sum(int(data[k].attrs["num_samples"]) for k in data.keys()))
@@ -420,6 +440,13 @@ def main() -> int:
                          "reset_joint_positions": list(RESET_JOINT_POSITIONS),
                          "hold_orientation": bool(args.hold_orientation)}}
 
+    try:  # before any hardware is opened
+        n_existing, next_index = existing_demos(output, env_args)
+    except (OSError, ValueError) as exc:
+        cprint(f"❌ Cannot add to {output}: {exc}", "red")
+        return 1
+    first_index = next_index
+
     device = None
     if not args.no_teleop:
         try:
@@ -441,7 +468,9 @@ def main() -> int:
 
     cprint("\n" + "=" * 64, "cyan")
     cprint("🤖 SoftMimicGen-format demo recorder", "cyan", attrs=["bold"])
-    cprint(f"   task     {args.task}\n   output   {output}\n   rate     {args.rate_hz:g} Hz\n"
+    cprint(f"   task     {args.task}\n   output   {output}"
+           + (f" (has {n_existing} demos; continuing at demo_{next_index})" if n_existing else " (new file)")
+           + f"\n   rate     {args.rate_hz:g} Hz\n"
            f"   images   {IMAGE_SIZE}x{IMAGE_SIZE}: agentview <- {args.front_device}, "
            f"eye_in_hand <- /zed_multi/{args.wrist_camera}\n"
            f"   teleop   {'off (--no-teleop)' if args.no_teleop else 'SpaceMouse'}"
@@ -452,7 +481,6 @@ def main() -> int:
     cprint("=" * 64, "cyan")
 
     exit_code = 0
-    n_kept = 0
     try:
         cprint("⏳ Waiting for the robot and cameras...", "cyan")
         if not wait_for_sensors(robot, cameras):
@@ -462,7 +490,9 @@ def main() -> int:
         staged = output.with_name(f".{output.stem}.episode.h5")
 
         while True:
-            cprint(f"\n{'=' * 64}\n📝 Episode {n_kept}\n{'=' * 64}", "cyan")
+            # numbered as it will be saved (data/demo_<n>), continuing from the demos already in the file
+            cprint(f"\n{'=' * 64}\n📝 Episode {next_index}  (data/demo_{next_index}; "
+                   f"{next_index - first_index + 1} this run)\n{'=' * 64}", "cyan")
             if home:
                 cprint("🔄 Homing (gripper opens)...", "yellow")
                 with teleop.control_lock:
@@ -488,7 +518,7 @@ def main() -> int:
             else:
                 name = append_demo(staged, output, env_args)
                 writer.delete()
-                n_kept += 1
+                next_index = int(name.split("_")[1]) + 1
                 cprint(f"💾 Saved {T} samples as data/{name} in {output.name}", "green")
             if reason == "error":
                 exit_code = 1
@@ -508,7 +538,10 @@ def main() -> int:
         pool.shutdown(wait=False)
         rclpy.try_shutdown()
         if output.exists():
-            cprint(f"\n🏁 {output}", "green", attrs=["bold"])
+            kept = next_index - first_index
+            summary = (f"kept {kept} this run (demo_{first_index}" + (f"..demo_{next_index - 1}" if kept > 1 else "")
+                       + f"), {n_existing + kept} demos in the file") if kept else "nothing kept this run"
+            cprint(f"\n🏁 {output}: {summary}", "green", attrs=["bold"])
     return exit_code
 
 
